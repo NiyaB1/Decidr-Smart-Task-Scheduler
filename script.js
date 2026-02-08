@@ -8,6 +8,10 @@ const taskPrioritySelect = document.getElementById("taskPriority");
 const taskDeadlineInput = document.getElementById("taskDeadline");
 const addTaskBtn = document.getElementById("addTaskBtn");
 const taskListEl = document.getElementById("taskList");
+const availableTimeInput = document.getElementById("availableTime");
+const getSuggestionBtn = document.getElementById("getSuggestionBtn");
+const suggestionBox = document.getElementById("suggestionBox");
+const suggestionContent = document.getElementById("suggestionContent");
 
 // ---------- INITIAL LOAD ----------
 loadTasks();
@@ -17,6 +21,10 @@ renderTasks();
 addTaskBtn.addEventListener("click", (e) => {
     e.preventDefault();
     addTask();
+});
+
+getSuggestionBtn.addEventListener("click", () => {
+    suggestTask();
 });
 
 // ---------- FUNCTIONS ----------
@@ -36,8 +44,8 @@ function addTask() {
         id: Date.now().toString(),
         name,
         remainingTime: time,
-        userPriority,          // 👈 user intent
-        priority: null,        // 👈 system-calculated
+        userPriority,      // user intent
+        priority: null,    // system-calculated
         deadline: taskDeadlineInput.value || null,
         createdAt: Date.now(),
         isEditing: false
@@ -57,6 +65,57 @@ function deleteTask(taskId) {
     renderTasks();
 }
 
+function suggestTask() {
+    const availableMinutes = parseInt(availableTimeInput.value, 10);
+
+    if (!availableMinutes || availableMinutes <= 0) {
+        alert("Please enter how many minutes you have.");
+        return;
+    }
+
+    if (tasks.length === 0) {
+        alert("No tasks available.");
+        return;
+    }
+
+    // Recalculate priorities
+    tasks.forEach(task => {
+        task.priority = calculatePriority(task);
+    });
+
+    // Sort using Decide-Now logic
+    const sortedTasks = sortTasksForNow(tasks);
+
+    // Find first task that fits time
+    const taskToDo = sortedTasks.find(
+        task => task.remainingTime <= availableMinutes
+    );
+
+    if (!taskToDo) {
+        suggestionContent.innerHTML = `
+            <p>No task fits within ${availableMinutes} minutes.</p>
+        `;
+    } else {
+        suggestionContent.innerHTML = `
+            <div class="suggested-task">
+                <h3>${taskToDo.name}</h3>
+                <p>⏱ ${taskToDo.remainingTime} min</p>
+                <p class="task-priority priority-${taskToDo.priority}">
+                    ${taskToDo.priority}
+                </p>
+                ${
+                    taskToDo.deadline
+                        ? `<p>⏰ ${formatDeadline(taskToDo.deadline)}</p>`
+                        : ""
+                }
+            </div>
+        `;
+    }
+
+    suggestionBox.classList.remove("hidden");
+}
+
+// ---------- RENDER ----------
 function renderTasks() {
     taskListEl.innerHTML = "";
 
@@ -65,9 +124,15 @@ function renderTasks() {
         return;
     }
 
+    // 🔁 Recalculate priority on every render
     tasks.forEach(task => {
         task.priority = calculatePriority(task);
+    });
 
+    // 🧠 Decide-Now sorting
+    const sortedTasks = sortTasksForNow(tasks);
+
+    sortedTasks.forEach(task => {
         const taskEl = document.createElement("div");
         taskEl.className = "task-item";
 
@@ -146,14 +211,8 @@ function renderTasks() {
         taskEl.querySelector(".save-btn")?.addEventListener("click", () => {
             task.name = taskEl.querySelector(".edit-name").value.trim();
             task.remainingTime = parseInt(taskEl.querySelector(".edit-time").value, 10);
-
-            const selectedUserPriority =
-                taskEl.querySelector(".edit-priority").value || null;
-
-            task.userPriority = selectedUserPriority;
-
-            const newDeadline = taskEl.querySelector(".edit-deadline").value;
-            task.deadline = newDeadline || null;
+            task.userPriority = taskEl.querySelector(".edit-priority").value || null;
+            task.deadline = taskEl.querySelector(".edit-deadline").value || null;
 
             task.priority = calculatePriority(task);
             task.isEditing = false;
@@ -176,7 +235,7 @@ function renderTasks() {
 function resetForm() {
     taskNameInput.value = "";
     taskTimeInput.value = "";
-    taskPrioritySelect.value = ""; // auto
+    taskPrioritySelect.value = "";
     taskDeadlineInput.value = "";
 }
 
@@ -197,25 +256,59 @@ function formatDeadline(deadlineStr) {
 
 // ---------- PRIORITY ENGINE ----------
 function calculatePriority(task) {
-    // 🔒 User-forced override
+    // 🔒 user-forced very-high
     if (task.userPriority === "very-high") {
         return "very-high";
     }
 
-    // Respect other explicit user priorities unless deadline escalates
-    if (task.userPriority && !task.deadline) {
-        return task.userPriority;
-    }
+    const now = new Date();
 
     if (task.deadline) {
-        const now = new Date();
         const deadline = new Date(task.deadline);
-        const diffDays = (deadline - now) / (1000 * 60 * 60 * 24);
+        const diffHours = (deadline - now) / (1000 * 60 * 60);
 
-        if (diffDays <= 1) return "high";
-        if (diffDays <= 3) return "medium";
+        if (diffHours <= 24) return "high";
+        if (diffHours <= 72) return "medium";
         return task.userPriority || "low";
     }
 
     return task.userPriority || "low";
+}
+
+// ---------- DECIDE-NOW SORT ----------
+function getPriorityWeight(priority) {
+    switch (priority) {
+        case "very-high": return 4;
+        case "high": return 3;
+        case "medium": return 2;
+        case "low": return 1;
+        default: return 1;
+    }
+}
+
+function sortTasksForNow(taskList) {
+    return [...taskList].sort((a, b) => {
+        // 1. Priority
+        const pDiff =
+            getPriorityWeight(b.priority) - getPriorityWeight(a.priority);
+        if (pDiff !== 0) return pDiff;
+
+        // 2. Deadline
+        if (a.deadline && b.deadline) {
+            const dDiff = new Date(a.deadline) - new Date(b.deadline);
+            if (dDiff !== 0) return dDiff;
+        } else if (a.deadline) {
+            return -1;
+        } else if (b.deadline) {
+            return 1;
+        }
+
+        // 3. Remaining time
+        if (a.remainingTime !== b.remainingTime) {
+            return a.remainingTime - b.remainingTime;
+        }
+
+        // 4. Created time
+        return a.createdAt - b.createdAt;
+    });
 }
