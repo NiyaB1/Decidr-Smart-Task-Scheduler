@@ -8,10 +8,16 @@ const taskPrioritySelect = document.getElementById("taskPriority");
 const taskDeadlineInput = document.getElementById("taskDeadline");
 const addTaskBtn = document.getElementById("addTaskBtn");
 const taskListEl = document.getElementById("taskList");
+
 const availableTimeInput = document.getElementById("availableTime");
 const getSuggestionBtn = document.getElementById("getSuggestionBtn");
 const suggestionBox = document.getElementById("suggestionBox");
 const suggestionContent = document.getElementById("suggestionContent");
+
+// decision mode radios
+const decisionModeInputs = document.querySelectorAll(
+    'input[name="decisionMode"]'
+);
 
 // ---------- INITIAL LOAD ----------
 loadTasks();
@@ -23,11 +29,13 @@ addTaskBtn.addEventListener("click", (e) => {
     addTask();
 });
 
-getSuggestionBtn.addEventListener("click", () => {
-    suggestTask();
-});
+getSuggestionBtn.addEventListener("click", suggestTask);
 
 // ---------- FUNCTIONS ----------
+
+function getDecisionMode() {
+    return [...decisionModeInputs].find(r => r.checked)?.value || "finishable";
+}
 
 function addTask() {
     const name = taskNameInput.value.trim();
@@ -44,8 +52,8 @@ function addTask() {
         id: Date.now().toString(),
         name,
         remainingTime: time,
-        userPriority,      // user intent
-        priority: null,    // system-calculated
+        userPriority,
+        priority: null,
         deadline: taskDeadlineInput.value || null,
         createdAt: Date.now(),
         isEditing: false
@@ -65,8 +73,10 @@ function deleteTask(taskId) {
     renderTasks();
 }
 
+/* ---------- SUGGESTION ENGINE ---------- */
 function suggestTask() {
     const availableMinutes = parseInt(availableTimeInput.value, 10);
+    const mode = getDecisionMode();
 
     if (!availableMinutes || availableMinutes <= 0) {
         alert("Please enter how many minutes you have.");
@@ -83,32 +93,60 @@ function suggestTask() {
         task.priority = calculatePriority(task);
     });
 
-    // Sort using Decide-Now logic
     const sortedTasks = sortTasksForNow(tasks);
 
-    // Find first task that fits time
-    const taskToDo = sortedTasks.find(
-        task => task.remainingTime <= availableMinutes
-    );
+    let chosenTask;
 
-    if (!taskToDo) {
+    if (mode === "finishable") {
+        // must fit time
+        chosenTask = sortedTasks.find(
+            task => task.remainingTime <= availableMinutes
+        );
+    } else {
+        // strategic: highest priority regardless of fit
+        chosenTask = sortedTasks[0];
+    }
+
+    if (!chosenTask) {
         suggestionContent.innerHTML = `
             <p>No task fits within ${availableMinutes} minutes.</p>
         `;
     } else {
         suggestionContent.innerHTML = `
-            <div class="suggested-task">
-                <h3>${taskToDo.name}</h3>
-                <p>⏱ ${taskToDo.remainingTime} min</p>
-                <p class="task-priority priority-${taskToDo.priority}">
-                    ${taskToDo.priority}
-                </p>
+            <div class="suggestion-task">${chosenTask.name}</div>
+
+            <div class="suggestion-details">
+                <div class="suggestion-detail">
+                    <span class="suggestion-detail-label">Time</span>
+                    <span class="suggestion-detail-value">
+                        ${chosenTask.remainingTime} min
+                    </span>
+                </div>
+
+                <div class="suggestion-detail">
+                    <span class="suggestion-detail-label">Priority</span>
+                    <span class="task-priority priority-${chosenTask.priority}">
+                        ${chosenTask.priority}
+                    </span>
+                </div>
+
                 ${
-                    taskToDo.deadline
-                        ? `<p>⏰ ${formatDeadline(taskToDo.deadline)}</p>`
+                    chosenTask.deadline
+                        ? `
+                        <div class="suggestion-detail">
+                            <span class="suggestion-detail-label">Deadline</span>
+                            <span class="suggestion-detail-value">
+                                ${formatDeadline(chosenTask.deadline)}
+                            </span>
+                        </div>
+                        `
                         : ""
                 }
             </div>
+
+            <p class="text-secondary">
+                Mode: <strong>${mode}</strong>
+            </p>
         `;
     }
 
@@ -124,12 +162,10 @@ function renderTasks() {
         return;
     }
 
-    // 🔁 Recalculate priority on every render
     tasks.forEach(task => {
         task.priority = calculatePriority(task);
     });
 
-    // 🧠 Decide-Now sorting
     const sortedTasks = sortTasksForNow(tasks);
 
     sortedTasks.forEach(task => {
@@ -139,91 +175,29 @@ function renderTasks() {
         taskEl.innerHTML = `
             <div class="task-header">
                 <div class="task-info">
-
-                    ${
-                        task.isEditing
-                            ? `<input class="edit-name" type="text" value="${task.name}" />`
-                            : `<div class="task-name">${task.name}</div>`
-                    }
+                    <div class="task-name">${task.name}</div>
 
                     <div class="task-meta">
-
+                        <span class="task-time">⏱ ${task.remainingTime} min</span>
+                        <span class="task-priority priority-${task.priority}">
+                            ${task.priority}
+                        </span>
                         ${
-                            task.isEditing
-                                ? `<input class="edit-time" type="number" value="${task.remainingTime}" />`
-                                : `<span class="task-time">⏱ ${task.remainingTime} min</span>`
+                            task.deadline
+                                ? `<span class="task-deadline">⏰ ${formatDeadline(task.deadline)}</span>`
+                                : ""
                         }
-
-                        ${
-                            task.isEditing
-                                ? `
-                                <select class="edit-priority">
-                                    <option value="">auto</option>
-                                    <option value="very-high" ${task.userPriority === "very-high" ? "selected" : ""}>
-                                        very high
-                                    </option>
-                                    <option value="high" ${task.userPriority === "high" ? "selected" : ""}>high</option>
-                                    <option value="medium" ${task.userPriority === "medium" ? "selected" : ""}>medium</option>
-                                    <option value="low" ${task.userPriority === "low" ? "selected" : ""}>low</option>
-                                </select>
-                                `
-                                : `<span class="task-priority priority-${task.priority}">
-                                    ${task.priority}
-                                   </span>`
-                        }
-
-                        ${
-                            task.isEditing
-                                ? `<input class="edit-deadline" type="datetime-local" value="${task.deadline || ""}" />`
-                                : task.deadline
-                                    ? `<span class="task-deadline">⏰ ${formatDeadline(task.deadline)}</span>`
-                                    : ""
-                        }
-
                     </div>
                 </div>
 
                 <div class="task-actions">
-                    ${
-                        task.isEditing
-                            ? `
-                              <button class="btn btn-success btn-small save-btn">Save</button>
-                              <button class="btn btn-secondary btn-small cancel-btn">Cancel</button>
-                              `
-                            : `
-                              <button class="btn btn-secondary btn-small edit-btn">Edit</button>
-                              <button class="btn-delete" title="Delete task">✕</button>
-                              `
-                    }
+                    <button class="btn-delete">✕</button>
                 </div>
             </div>
         `;
 
-        taskEl.querySelector(".btn-delete")?.addEventListener("click", () => {
+        taskEl.querySelector(".btn-delete").addEventListener("click", () => {
             deleteTask(task.id);
-        });
-
-        taskEl.querySelector(".edit-btn")?.addEventListener("click", () => {
-            task.isEditing = true;
-            renderTasks();
-        });
-
-        taskEl.querySelector(".save-btn")?.addEventListener("click", () => {
-            task.name = taskEl.querySelector(".edit-name").value.trim();
-            task.remainingTime = parseInt(taskEl.querySelector(".edit-time").value, 10);
-            task.userPriority = taskEl.querySelector(".edit-priority").value || null;
-            task.deadline = taskEl.querySelector(".edit-deadline").value || null;
-
-            task.priority = calculatePriority(task);
-            task.isEditing = false;
-
-            saveTasks();
-            renderTasks();
-        });
-
-        taskEl.querySelector(".cancel-btn")?.addEventListener("click", () => {
-            task.isEditing = false;
-            renderTasks();
         });
 
         taskListEl.appendChild(taskEl);
@@ -256,59 +230,48 @@ function formatDeadline(deadlineStr) {
 
 // ---------- PRIORITY ENGINE ----------
 function calculatePriority(task) {
-    // 🔒 user-forced very-high
-    if (task.userPriority === "very-high") {
-        return "very-high";
-    }
+    if (task.userPriority === "very-high") return "very-high";
 
     const now = new Date();
 
     if (task.deadline) {
-        const deadline = new Date(task.deadline);
-        const diffHours = (deadline - now) / (1000 * 60 * 60);
+        const diffHours =
+            (new Date(task.deadline) - now) / (1000 * 60 * 60);
 
         if (diffHours <= 24) return "high";
         if (diffHours <= 72) return "medium";
-        return task.userPriority || "low";
     }
 
     return task.userPriority || "low";
 }
 
-// ---------- DECIDE-NOW SORT ----------
+// ---------- SORT ----------
 function getPriorityWeight(priority) {
-    switch (priority) {
-        case "very-high": return 4;
-        case "high": return 3;
-        case "medium": return 2;
-        case "low": return 1;
-        default: return 1;
-    }
+    return {
+        "very-high": 4,
+        "high": 3,
+        "medium": 2,
+        "low": 1
+    }[priority] || 1;
 }
 
 function sortTasksForNow(taskList) {
     return [...taskList].sort((a, b) => {
-        // 1. Priority
         const pDiff =
             getPriorityWeight(b.priority) - getPriorityWeight(a.priority);
         if (pDiff !== 0) return pDiff;
 
-        // 2. Deadline
         if (a.deadline && b.deadline) {
-            const dDiff = new Date(a.deadline) - new Date(b.deadline);
-            if (dDiff !== 0) return dDiff;
-        } else if (a.deadline) {
-            return -1;
-        } else if (b.deadline) {
-            return 1;
+            return new Date(a.deadline) - new Date(b.deadline);
         }
 
-        // 3. Remaining time
+        if (a.deadline) return -1;
+        if (b.deadline) return 1;
+
         if (a.remainingTime !== b.remainingTime) {
             return a.remainingTime - b.remainingTime;
         }
 
-        // 4. Created time
         return a.createdAt - b.createdAt;
     });
 }
