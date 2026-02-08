@@ -14,7 +14,10 @@ loadTasks();
 renderTasks();
 
 // ---------- EVENT LISTENERS ----------
-addTaskBtn.addEventListener("click", addTask);
+addTaskBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    addTask();
+});
 
 // ---------- FUNCTIONS ----------
 
@@ -33,7 +36,8 @@ function addTask() {
         remainingTime: time,
         priority: taskPrioritySelect.value || "medium",
         deadline: taskDeadlineInput.value || null,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        isEditing: false
     };
 
     tasks.push(task);
@@ -63,30 +67,103 @@ function renderTasks() {
         taskEl.innerHTML = `
             <div class="task-header">
                 <div class="task-info">
-                    <div class="task-name">${task.name}</div>
+
+                    ${
+                        task.isEditing
+                            ? `<input class="edit-name" type="text" value="${task.name}" />`
+                            : `<div class="task-name">${task.name}</div>`
+                    }
 
                     <div class="task-meta">
-                        <span class="task-time">⏱ ${task.remainingTime} min</span>
-                        <span class="task-priority priority-${task.priority}">
-                            ${task.priority}
-                        </span>
+
                         ${
-                            task.deadline
-                                ? `<span class="task-deadline">⏰ ${formatDeadline(task.deadline)}</span>`
-                                : ""
+                            task.isEditing
+                                ? `<input class="edit-time" type="number" value="${task.remainingTime}" />`
+                                : `<span class="task-time">⏱ ${task.remainingTime} min</span>`
                         }
+
+                        ${
+                            task.isEditing
+                                ? `
+                                <select class="edit-priority">
+                                    <option value="high" ${task.priority === "high" ? "selected" : ""}>high</option>
+                                    <option value="medium" ${task.priority === "medium" ? "selected" : ""}>medium</option>
+                                    <option value="low" ${task.priority === "low" ? "selected" : ""}>low</option>
+                                </select>
+                                `
+                                : `<span class="task-priority priority-${task.priority}">
+                                    ${task.priority}
+                                   </span>`
+                        }
+
+                        ${
+                            task.isEditing
+                                ? `<input class="edit-deadline" type="datetime-local" value="${task.deadline || ""}" />`
+                                : task.deadline
+                                    ? `<span class="task-deadline">⏰ ${formatDeadline(task.deadline)}</span>`
+                                    : ""
+                        }
+
                     </div>
                 </div>
 
                 <div class="task-actions">
-                    <button class="btn-delete" title="Delete task">✕</button>
+                    ${
+                        task.isEditing
+                            ? `
+                              <button class="btn btn-success btn-small save-btn">Save</button>
+                              <button class="btn btn-secondary btn-small cancel-btn">Cancel</button>
+                              `
+                            : `
+                              <button class="btn btn-secondary btn-small edit-btn">Edit</button>
+                              <button class="btn-delete" title="Delete task">✕</button>
+                              `
+                    }
                 </div>
             </div>
         `;
 
-        taskEl.querySelector(".btn-delete").addEventListener("click", () => {
-            deleteTask(task.id);
-        });
+        // DELETE
+        const deleteBtn = taskEl.querySelector(".btn-delete");
+        if (deleteBtn) {
+            deleteBtn.addEventListener("click", () => deleteTask(task.id));
+        }
+
+        // EDIT
+        const editBtn = taskEl.querySelector(".edit-btn");
+        if (editBtn) {
+            editBtn.addEventListener("click", () => {
+                task.isEditing = true;
+                renderTasks();
+            });
+        }
+
+        // SAVE
+        const saveBtn = taskEl.querySelector(".save-btn");
+        if (saveBtn) {
+            saveBtn.addEventListener("click", () => {
+                task.name = taskEl.querySelector(".edit-name").value.trim();
+                task.remainingTime = parseInt(taskEl.querySelector(".edit-time").value, 10);
+                task.priority = taskEl.querySelector(".edit-priority").value;
+
+                const newDeadline = taskEl.querySelector(".edit-deadline").value;
+                task.deadline = newDeadline || null;
+
+                task.isEditing = false;
+
+                saveTasks();
+                renderTasks();
+            });
+        }
+
+        // CANCEL
+        const cancelBtn = taskEl.querySelector(".cancel-btn");
+        if (cancelBtn) {
+            cancelBtn.addEventListener("click", () => {
+                task.isEditing = false;
+                renderTasks();
+            });
+        }
 
         taskListEl.appendChild(taskEl);
     });
