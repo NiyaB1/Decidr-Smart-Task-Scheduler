@@ -20,6 +20,7 @@
     --warning-color: #f59e0b;
     --secondary-color: #8b5cf6;
     
+    --priority-very-high: #7a0c0c;
     --priority-high: #dc2626;
     --priority-medium: #f59e0b;
     --priority-low: #059669;
@@ -318,6 +319,11 @@ input::placeholder {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.priority-very-high {
+    background-color: rgba(122, 12, 12, 0.1);
+    color: var(--priority-very-high);
 }
 
 .priority-high {

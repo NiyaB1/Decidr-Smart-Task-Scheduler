@@ -30,11 +30,14 @@ function addTask() {
         return;
     }
 
+    const userPriority = taskPrioritySelect.value || null;
+
     const task = {
         id: Date.now().toString(),
         name,
         remainingTime: time,
-        priority: taskPrioritySelect.value || null, // truly optional
+        userPriority,          // 👈 user intent
+        priority: null,        // 👈 system-calculated
         deadline: taskDeadlineInput.value || null,
         createdAt: Date.now(),
         isEditing: false
@@ -63,7 +66,6 @@ function renderTasks() {
     }
 
     tasks.forEach(task => {
-        // Auto-update priority on every render
         task.priority = calculatePriority(task);
 
         const taskEl = document.createElement("div");
@@ -92,9 +94,12 @@ function renderTasks() {
                                 ? `
                                 <select class="edit-priority">
                                     <option value="">auto</option>
-                                    <option value="high" ${task.priority === "high" ? "selected" : ""}>high</option>
-                                    <option value="medium" ${task.priority === "medium" ? "selected" : ""}>medium</option>
-                                    <option value="low" ${task.priority === "low" ? "selected" : ""}>low</option>
+                                    <option value="very-high" ${task.userPriority === "very-high" ? "selected" : ""}>
+                                        very high
+                                    </option>
+                                    <option value="high" ${task.userPriority === "high" ? "selected" : ""}>high</option>
+                                    <option value="medium" ${task.userPriority === "medium" ? "selected" : ""}>medium</option>
+                                    <option value="low" ${task.userPriority === "low" ? "selected" : ""}>low</option>
                                 </select>
                                 `
                                 : `<span class="task-priority priority-${task.priority}">
@@ -129,36 +134,34 @@ function renderTasks() {
             </div>
         `;
 
-        // DELETE
         taskEl.querySelector(".btn-delete")?.addEventListener("click", () => {
             deleteTask(task.id);
         });
 
-        // EDIT
         taskEl.querySelector(".edit-btn")?.addEventListener("click", () => {
             task.isEditing = true;
             renderTasks();
         });
 
-        // SAVE
         taskEl.querySelector(".save-btn")?.addEventListener("click", () => {
             task.name = taskEl.querySelector(".edit-name").value.trim();
             task.remainingTime = parseInt(taskEl.querySelector(".edit-time").value, 10);
 
-            const selectedPriority = taskEl.querySelector(".edit-priority").value;
-            task.priority = selectedPriority || null;
+            const selectedUserPriority =
+                taskEl.querySelector(".edit-priority").value || null;
+
+            task.userPriority = selectedUserPriority;
 
             const newDeadline = taskEl.querySelector(".edit-deadline").value;
             task.deadline = newDeadline || null;
 
             task.priority = calculatePriority(task);
-
             task.isEditing = false;
+
             saveTasks();
             renderTasks();
         });
 
-        // CANCEL
         taskEl.querySelector(".cancel-btn")?.addEventListener("click", () => {
             task.isEditing = false;
             renderTasks();
@@ -173,7 +176,7 @@ function renderTasks() {
 function resetForm() {
     taskNameInput.value = "";
     taskTimeInput.value = "";
-    taskPrioritySelect.value = ""; // 👈 auto / none
+    taskPrioritySelect.value = ""; // auto
     taskDeadlineInput.value = "";
 }
 
@@ -194,8 +197,14 @@ function formatDeadline(deadlineStr) {
 
 // ---------- PRIORITY ENGINE ----------
 function calculatePriority(task) {
-    if (!task.deadline && !task.priority) {
-        return "low";
+    // 🔒 User-forced override
+    if (task.userPriority === "very-high") {
+        return "very-high";
+    }
+
+    // Respect other explicit user priorities unless deadline escalates
+    if (task.userPriority && !task.deadline) {
+        return task.userPriority;
     }
 
     if (task.deadline) {
@@ -205,8 +214,8 @@ function calculatePriority(task) {
 
         if (diffDays <= 1) return "high";
         if (diffDays <= 3) return "medium";
-        return "low";
+        return task.userPriority || "low";
     }
 
-    return task.priority || "low";
+    return task.userPriority || "low";
 }
